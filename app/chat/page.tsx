@@ -73,16 +73,43 @@ export default function ChatPage() {
     }
   }, []);
 
+  const loadingChatsRef = useRef(false);
+
   const loadChats = useCallback(async () => {
+    if (loadingChatsRef.current) return;
+    loadingChatsRef.current = true;
+
     try {
       const data = await ChatService.getAllChats();
       setChats(data);
-    } catch (error) {
-      console.error('Failed to load chats:', error);
+    } catch (e) {
+      console.error('Failed to load chats:', e);
     } finally {
-      setLoading(false);
+      loadingChatsRef.current = false;
     }
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      await loadChats();
+      if (!cancelled) setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadChats]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.hidden) return;
+      loadChats();
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [loadChats]);
 
   const reconcileOptimistic = useCallback(
     (serverMsg: Message) => {
