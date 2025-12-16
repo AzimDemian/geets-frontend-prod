@@ -1,38 +1,41 @@
+// components/MessageBubble.tsx
 'use client';
 
-import { Message, ReceiptStatus } from '@/types/chat';
-
-function renderReceipt(status?: ReceiptStatus) {
-  // минималистично, позже заменим на норм иконки
-  if (status === 'SEEN') return '👁';
-  if (status === 'DELIVERED') return '✓✓';
-  if (status === 'SENT') return '✓';
-  return '';
-}
+import type { Message } from '@/types/chat';
 
 type Props = {
   message: Message;
   isMine: boolean;
-
-  isEditing: boolean;
-  editingText: string;
-  onChangeEditingText: (v: string) => void;
-
-  onStartEdit: () => void;
-  onCancelEdit: () => void;
-  onSaveEdit: () => void;
-  onDelete: () => void;
+  isEditing?: boolean;
+  editingText?: string;
+  onChangeEditingText?: (v: string) => void;
+  onSaveEdit?: () => void;
+  onCancelEdit?: () => void;
+  onStartEdit?: () => void;
+  onDelete?: () => void;
 };
 
-export function MessageBubble({
+function ReceiptIcon({ message }: { message: Message }) {
+  // sent = loader (pending)
+  if (message.is_pending || message.status === 'SENT') {
+    return <span className="text-xs opacity-80">⏳</span>;
+  }
+  if (message.status === 'SEEN') {
+    return <span className="text-xs opacity-80">✓✓</span>;
+  }
+  // DELIVERED
+  return <span className="text-xs opacity-80">✓</span>;
+}
+
+export default function MessageBubble({
   message,
   isMine,
   isEditing,
   editingText,
   onChangeEditingText,
-  onStartEdit,
-  onCancelEdit,
   onSaveEdit,
+  onCancelEdit,
+  onStartEdit,
   onDelete,
 }: Props) {
   return (
@@ -48,12 +51,12 @@ export function MessageBubble({
           <div className="space-y-2">
             <input
               type="text"
-              value={editingText}
-              onChange={(e) => onChangeEditingText(e.target.value)}
-              className="w-full px-2 py-1 border border-gray-300 rounded text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={editingText ?? ''}
+              onChange={(e) => onChangeEditingText?.(e.target.value)}
+              className="w-full px-2 py-1 border border-gray-300 rounded text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
               onKeyDown={(e) => {
-                if (e.key === 'Enter') onSaveEdit();
-                else if (e.key === 'Escape') onCancelEdit();
+                if (e.key === 'Enter') onSaveEdit?.();
+                if (e.key === 'Escape') onCancelEdit?.();
               }}
               autoFocus
             />
@@ -66,7 +69,7 @@ export function MessageBubble({
               </button>
               <button
                 onClick={onCancelEdit}
-                className="px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600 cursor-pointer"
+                className="px-2 py-1 bg-gray-500 text-white text-xs rounded hover:bg-gray-600"
               >
                 Cancel
               </button>
@@ -74,23 +77,18 @@ export function MessageBubble({
           </div>
         ) : (
           <>
-            {!isMine && (
+            {!isMine && message.sender_username ? (
               <>
-                <p className="text-gray-800 font-bold">{message.sender_username}</p>
-                <hr />
+                <p className="font-bold">{message.sender_username}</p>
+                <hr className="my-1 opacity-30" />
               </>
-            )}
+            ) : null}
 
-            <p className={isMine ? 'text-white' : 'text-gray-800'}>{message.body}</p>
+            <p className={isMine ? 'text-white' : 'text-gray-900'}>{message.body}</p>
 
-            <div className="text-xs opacity-70 mt-1 flex items-center gap-2">
+            <div className="text-xs opacity-70 mt-1 flex items-center gap-2 justify-end">
               <span>{new Date(message.created_at + 'Z').toLocaleTimeString()}</span>
-              {message.updated_at && message.updated_at !== message.created_at && (
-                <span className="italic">(edited)</span>
-              )}
-              {isMine && (
-                <span className="opacity-90">{renderReceipt(message.status)}</span>
-              )}
+              {isMine ? <ReceiptIcon message={message} /> : null}
             </div>
 
             {isMine && (

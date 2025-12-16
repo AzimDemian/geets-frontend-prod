@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { Message } from '@/types/chat';
-import { MessageBubble } from './MessageBubble';
+import MessageBubble from './MessageBubble';
 
 type Props = {
   messages: Message[];
@@ -16,6 +16,8 @@ type Props = {
   onCancelEdit: () => void;
   onSaveEdit: () => void;
   onDelete: (id: string) => void;
+
+  onBottomVisible?: () => void;
 };
 
 export function MessageList({
@@ -28,12 +30,14 @@ export function MessageList({
   onCancelEdit,
   onSaveEdit,
   onDelete,
+  onBottomVisible,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'auto' });
-  }, [messages.length]);
+    onBottomVisible?.();
+  }, [messages.length, onBottomVisible]);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">

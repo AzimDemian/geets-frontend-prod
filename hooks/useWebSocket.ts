@@ -1,22 +1,9 @@
+// hooks/useWebSocket.ts
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthService } from '@/services/auth.service';
+import type { WebSocketMessage, WsEventType } from '@/types/chat';
 
 const DEFAULT_WS_URL = 'ws://localhost:8000/ws';
-
-export type WsEventType =
-  | 'ping'
-  | 'pong'
-  | 'message.create'
-  | 'message.edit'
-  | 'message.delete'
-  | 'message.delivered'
-  | 'message.seen'
-  | string;
-
-export interface WebSocketMessage<TPayload = any> {
-  type: WsEventType;
-  payload: TPayload;
-}
 
 export type WsCallback = (type: WsEventType, payload: any, raw: WebSocketMessage) => void;
 
@@ -51,7 +38,10 @@ export function useWebSocket(onEvent: WsCallback, opts: UseWebSocketOptions = {}
   const reconnectAttemptsRef = useRef(0);
   const closedByClientRef = useRef(false);
 
-  const connectRef = useRef<(() => void) | null>(null);
+  const onEventRef = useRef(onEvent);
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
 
   const log = useCallback(
     (...args: any[]) => {
@@ -71,30 +61,24 @@ export function useWebSocket(onEvent: WsCallback, opts: UseWebSocketOptions = {}
     }
   }, []);
 
-  const closeSocket = useCallback(
-    (markClosedByClient: boolean) => {
-      closedByClientRef.current = markClosedByClient;
-      clearTimers();
-
-      const ws = wsRef.current;
-      wsRef.current = null;
-
-      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-        try {
-          ws.close();
-        } catch {
-          // ignore
-        }
-      }
-
-      setIsConnected(false);
-    },
-    [clearTimers]
-  );
-
   const disconnect = useCallback(() => {
-    closeSocket(true);
-  }, [closeSocket]);
+    closedByClientRef.current = true;
+    clearTimers();
+
+    const ws = wsRef.current;
+    wsRef.current = null;
+
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      try {
+        ws.close();
+      } catch {
+        // ignore
+      }
+    }
+    setIsConnected(false);
+  }, [clearTimers]);
+
+  const connectRef = useRef<(() => void) | null>(null);
 
   const connect = useCallback(() => {
     closedByClientRef.current = false;
@@ -105,8 +89,8 @@ export function useWebSocket(onEvent: WsCallback, opts: UseWebSocketOptions = {}
       return;
     }
 
-    // закрываем старый сокет, но НЕ ставим "closed by client" (иначе убьём reconnection)
-    closeSocket(false);
+    // закрываем старый коннект перед новым
+    disconnect();
 
     try {
       const ws = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token)}`);
@@ -134,17 +118,14 @@ export function useWebSocket(onEvent: WsCallback, opts: UseWebSocketOptions = {}
           return;
         }
 
-        if (!data || typeof data.type !== 'string') {
-          console.error('Invalid WS payload:', data);
-          return;
-        }
+        if (!data || typeof data.type !== 'string') return;
 
         if (data.type === 'pong') {
           log('pong');
           return;
         }
 
-        onEvent(data.type, data.payload, data);
+        onEventRef.current(data.type, data.payload, data);
       };
 
       ws.onerror = (error) => {
@@ -176,19 +157,20 @@ export function useWebSocket(onEvent: WsCallback, opts: UseWebSocketOptions = {}
   }, [
     WS_URL,
     clearTimers,
-    closeSocket,
+    disconnect,
     initialReconnectDelayMs,
     maxReconnectAttempts,
     maxReconnectDelayMs,
     pingIntervalMs,
-    onEvent,
     log,
   ]);
 
   useEffect(() => {
     connectRef.current = connect;
-    connect();
+  }, [connect]);
 
+  useEffect(() => {
+    connect();
     return () => disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

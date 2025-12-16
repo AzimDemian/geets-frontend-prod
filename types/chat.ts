@@ -18,10 +18,17 @@ export interface Message {
   body: string;
   created_at: string;
   updated_at?: string;
+
+  // backend/old
   read?: boolean;
+
+  // receipts UI
   status?: ReceiptStatus;
   delivered_at?: string | null;
   seen_at?: string | null;
+
+  // local-only (для "sent" как loader)
+  is_pending?: boolean;
 }
 
 export interface Chat {
@@ -38,7 +45,17 @@ export interface Chat {
 
 export type Conversation = Chat;
 
-export interface WebSocketMessage {
-  type: 'message.create' | 'message.edit' | 'message.delete' | 'typing' | 'read' | 'status' | 'pong' | 'message.delivered' | 'message.seen';
-  payload?: any;
+export type WsEventType =
+  | 'ping'
+  | 'pong'
+  | 'message.create'
+  | 'message.edit'
+  | 'message.delete'
+  | 'message.delivered'
+  | 'message.seen'
+  | string;
+
+export interface WebSocketMessage<TPayload = any> {
+  type: WsEventType;
+  payload: TPayload;
 }
