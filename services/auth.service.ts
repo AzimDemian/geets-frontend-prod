@@ -1,7 +1,9 @@
 import { LoginRequest, AuthResponse } from '@/types/auth';
 import { jwtDecode } from "jwt-decode";
 
-const API_BASE_URL = 'http://localhost:8000';
+
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 interface JwtPayload {
   sub: string;
@@ -9,6 +11,7 @@ interface JwtPayload {
   exp: number;
 }
 
+  
 export class AuthService {
   static async register(credentials: LoginRequest): Promise<AuthResponse> {
     const response = await fetch(`${API_BASE_URL}/api/auth/register`, {

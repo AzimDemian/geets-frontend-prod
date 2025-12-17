@@ -1,7 +1,8 @@
 import { Chat, Message } from '@/types/chat';
 import { AuthService } from './auth.service';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export class ChatService {
   private static getAuthHeaders(): HeadersInit {

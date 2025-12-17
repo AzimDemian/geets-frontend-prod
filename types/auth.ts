@@ -19,7 +19,7 @@ export interface User {
 }
 
 // Password validation regex (8-100 chars, at least 1 letter and 1 number)
-export const PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,100}$/;
+export const PASSWORD_REGEX = /^(?=.{8,100}$)(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/;
 
 // Helper function to validate password
 export function isValidPassword(password: string): boolean {
