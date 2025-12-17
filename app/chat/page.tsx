@@ -22,24 +22,13 @@ function makeTempId() {
 }
 
 
-function beep() {
+function playMessageSound() {
   try {
-    const AudioCtx = (window.AudioContext || (window as any).webkitAudioContext);
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = 880;
-    gain.gain.value = 0.05;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    setTimeout(() => {
-      osc.stop();
-      ctx.close();
-    }, 120);
+    const a = new Audio('/sounds/message.mp3');
+    a.volume = 0.6;
+    a.play().catch(() => {
+    });
   } catch {
-    // ignore
   }
 }
 
@@ -94,7 +83,7 @@ export default function ChatPage() {
   const [mutedByChatId, setMutedByChatId] = useState<Record<string, boolean>>({});
 
 
-  // per-chat notification mute (front-only)
+  // per-chat notification mute
   useEffect(() => {
     try {
       const raw = localStorage.getItem('geets.muted_chats');
@@ -254,21 +243,17 @@ export default function ChatPage() {
           seen_at: payload.seen_at ?? null,
         };
 
-        // если открыт этот чат — применяем
         if (selectedId && serverMsg.conversation_id === selectedId) {
           if (String(serverMsg.sender_id) === String(currentUserId)) {
             reconcileOptimistic(serverMsg);
           } else {
             setMessages((prev) => [...prev, serverMsg]);
 
-            // чат открыт => unread не ставим
             setUnreadByChatId((prev) => {
               const next = { ...prev };
               delete next[String(serverMsg.conversation_id)];
               return next;
             });
-
-            // если пользователь у низа — MessageList вызовет sendSeenIfNeeded()
           }
         } else {
           // чат НЕ открыт: входящее сообщение => unread + уведомление
@@ -278,8 +263,8 @@ export default function ChatPage() {
             setUnreadByChatId((prev) => ({ ...prev, [cid]: (prev[cid] ?? 0) + 1 }));
 
             if (!isChatMuted(cid)) {
-              beep();
-              const chatName =
+              playMessageSound();
+              const chatName = 
                 chats.find((c) => String(c.id) === cid)?.name ??
                 chats.find((c) => String(c.id) === cid)?.title ??
                 'New message';
@@ -353,7 +338,7 @@ export default function ChatPage() {
     }
   };
 
-  // ---- SEEN: отправка last_seen только когда низ реально виден (через MessageList onBottomVisible) ----
+  // ---- SEEN: отправка last_seen только когда веизу (через MessageList onBottomVisible) ----
   const lastSentSeenRef = useRef<Record<string, string>>({}); // conversationId -> lastSeenMessageId
 
   const sendSeenIfNeeded = useCallback(() => {

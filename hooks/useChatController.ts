@@ -245,6 +245,29 @@ export function useChatController() {
     (maybeSendSeen as any).toString; // noop: просто чтобы ESLint не ругался на "unused"
   }, [maybeSendSeen]);
 
+  useEffect(() => {
+    const unlock = () => {
+      // прогреваем Audio, чтобы потом play() не блокировался
+      const a = new Audio('/sounds/message.mp3');
+      a.volume = 0;
+      a.play()
+        .then(() => {
+          a.pause();
+          a.currentTime = 0;
+        })
+        .catch(() => {});
+    };
+
+    window.addEventListener('click', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+
+    return () => {
+      window.removeEventListener('click', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
+
+
   // публичный метод: когда чат открыт/мы внизу — проставить seen до последнего
   const markCurrentChatSeen = useCallback(() => {
     const chat = selectedChatRef.current;
