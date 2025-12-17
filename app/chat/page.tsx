@@ -7,7 +7,7 @@ import { ChatService } from '@/services/chat.service';
 import { Chat, Message, User, WsEventType } from '@/types/chat';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { jwtDecode } from 'jwt-decode';
-import { FaSignOutAlt, FaTimes, FaUsers } from 'react-icons/fa';
+import { FaSignOutAlt, FaTimes, FaUsers, FaBell, FaBellSlash } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import { MessageList } from '@/components/MessageList';
 
@@ -20,6 +20,44 @@ interface JwtPayload {
 function makeTempId() {
   return `tmp-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 }
+
+
+function beep() {
+  try {
+    const AudioCtx = (window.AudioContext || (window as any).webkitAudioContext);
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    gain.gain.value = 0.05;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    setTimeout(() => {
+      osc.stop();
+      ctx.close();
+    }, 120);
+  } catch {
+    // ignore
+  }
+}
+
+async function notifyBrowser(title: string, body: string) {
+  try {
+    if (!('Notification' in window)) return;
+
+    if (Notification.permission === 'default') {
+      await Notification.requestPermission();
+    }
+    if (Notification.permission !== 'granted') return;
+
+    new Notification(title, { body });
+  } catch {
+    // ignore
+  }
+}
+
 
 export default function ChatPage() {
   const router = useRouter();
@@ -51,6 +89,44 @@ export default function ChatPage() {
   const [searchingGroupUsers, setSearchingGroupUsers] = useState(false);
 
   const [currentUserId, setCurrentUserId] = useState<string>('');
+
+  const [unreadByChatId, setUnreadByChatId] = useState<Record<string, number>>({});
+  const [mutedByChatId, setMutedByChatId] = useState<Record<string, boolean>>({});
+
+
+  // per-chat notification mute (front-only)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('geets.muted_chats');
+      if (raw) setMutedByChatId(JSON.parse(raw));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('geets.muted_chats', JSON.stringify(mutedByChatId));
+    } catch {
+      // ignore
+    }
+  }, [mutedByChatId]);
+
+  const toggleChatMuted = useCallback((chatId: string) => {
+    setMutedByChatId((prev) => {
+      const id = String(chatId);
+      const next = { ...prev, [id]: !prev[id] };
+      return next;
+    });
+  }, []);
+
+  const isChatMuted = useCallback(
+    (chatId: string) => {
+      return Boolean(mutedByChatId[String(chatId)]);
+    },
+    [mutedByChatId]
+  );
+
 
   const selectedChatRef = useRef<Chat | null>(null);
   useEffect(() => {
@@ -100,15 +176,6 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadChats]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (document.hidden) return;
-      loadChats();
-    }, 500);
-
-    return () => clearInterval(interval);
   }, [loadChats]);
 
   const reconcileOptimistic = useCallback(
@@ -187,11 +254,37 @@ export default function ChatPage() {
           seen_at: payload.seen_at ?? null,
         };
 
+        // если открыт этот чат — применяем
         if (selectedId && serverMsg.conversation_id === selectedId) {
           if (String(serverMsg.sender_id) === String(currentUserId)) {
             reconcileOptimistic(serverMsg);
           } else {
             setMessages((prev) => [...prev, serverMsg]);
+
+            // чат открыт => unread не ставим
+            setUnreadByChatId((prev) => {
+              const next = { ...prev };
+              delete next[String(serverMsg.conversation_id)];
+              return next;
+            });
+
+            // если пользователь у низа — MessageList вызовет sendSeenIfNeeded()
+          }
+        } else {
+          // чат НЕ открыт: входящее сообщение => unread + уведомление
+          if (String(serverMsg.sender_id) !== String(currentUserId)) {
+            const cid = String(serverMsg.conversation_id);
+
+            setUnreadByChatId((prev) => ({ ...prev, [cid]: (prev[cid] ?? 0) + 1 }));
+
+            if (!isChatMuted(cid)) {
+              beep();
+              const chatName =
+                chats.find((c) => String(c.id) === cid)?.name ??
+                chats.find((c) => String(c.id) === cid)?.title ??
+                'New message';
+              notifyBrowser(chatName, serverMsg.body);
+            }
           }
         }
 
@@ -231,9 +324,7 @@ export default function ChatPage() {
         applySeenUpTo(conversationId, lastSeenId);
         return;
       }
-    },
-    [applySeenUpTo, currentUserId, loadChats, reconcileOptimistic]
-  );
+    }, [applySeenUpTo, currentUserId, loadChats, reconcileOptimistic, chats, isChatMuted]);
 
   const { isConnected, sendMessage: sendWsMessage, disconnect: wsDisconnect } = useWebSocket(handleWs);
 
@@ -248,6 +339,13 @@ export default function ChatPage() {
 
       setMessages(data);
       setSelectedChat({ ...chat, participants });
+
+      // clear unread when opening chat
+      setUnreadByChatId((prev) => {
+        const next = { ...prev };
+        delete next[String(chat.id)];
+        return next;
+      });
       setEditingMessageId(null);
       setEditingText('');
     } catch (error) {
@@ -271,6 +369,13 @@ export default function ChatPage() {
 
     if (lastSentSeenRef.current[convId] === lastSeenId) return;
     lastSentSeenRef.current[convId] = lastSeenId;
+
+    // clear unread as soon as we consider this chat read
+    setUnreadByChatId((prev) => {
+      const next = { ...prev };
+      delete next[convId];
+      return next;
+    });
 
     try {
       sendWsMessage('message.seen', {
@@ -468,23 +573,53 @@ export default function ChatPage() {
         <div className="overflow-y-auto flex-1">
           {chats.length === 0 ? (
             <p className="p-4 text-gray-500 text-center">No conversations yet</p>
-          ) : (
-            chats.map((chat) => (
-              <div
-                key={chat.id}
-                onClick={() => loadMessages(chat)}
-                className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-100 transition ${selectedChat?.id === chat.id ? 'bg-indigo-50' : ''}`}
-              >
-                <div className="flex items-center gap-2">
-                  {chat.is_group && <span className="text-lg">👥</span>}
-                  <div className="flex-1">
-                    <div className="font-semibold text-gray-800">{chat.name || chat.title || 'Unnamed Chat'}</div>
-                    <div className="text-xs text-gray-500">{chat.is_group ? 'Group' : 'Direct Message'}</div>
+          ) :
+            chats.map((chat) => {
+              const cid = String(chat.id);
+              const unread = unreadByChatId[cid] ?? 0;
+              const muted = mutedByChatId[cid] ?? false;
+
+              return (
+                <div
+                  key={chat.id}
+                  onClick={() => loadMessages(chat)}
+                  className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-100 transition ${
+                    selectedChat?.id === chat.id ? 'bg-indigo-50' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {chat.is_group && <span className="text-lg">👥</span>}
+
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-semibold truncate ${unread > 0 ? 'text-gray-900' : 'text-gray-800'}`}>
+                        {chat.name || chat.title || 'Unnamed Chat'}
+                      </div>
+                      <div className="text-xs text-gray-500">{chat.is_group ? 'Group' : 'Direct Message'}</div>
+                    </div>
+
+                    {/* per-chat notifications toggle */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleChatMuted(cid);
+                      }}
+                      className="p-2 bg-transparent text-gray-400 rounded-lg hover:bg-gray-200 text-lg font-medium cursor-pointer"
+                      title={muted ? 'Enable notifications' : 'Mute notifications'}
+                    >
+                      {muted ? <FaBellSlash /> : <FaBell />}
+                    </button>
+
+                    {unread > 0 && (
+                      <div className="ml-1 text-xs bg-red-600 text-white rounded-full px-2 py-1">
+                        {unread > 99 ? '99+' : unread}
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))
-          )}
+              );
+            })
+}
         </div>
 
         <div className="p-3 border-t border-gray-200 text-xs text-gray-500">{isConnected ? '🟢 Connected' : '🔴 Disconnected'}</div>
@@ -525,7 +660,17 @@ export default function ChatPage() {
               onCancelEdit={handleCancelEdit}
               onSaveEdit={handleSaveEdit}
               onDelete={handleDeleteMessage}
-              onBottomVisible={sendSeenIfNeeded}
+              onBottomVisible={() => {
+                sendSeenIfNeeded();
+                if (selectedChat) {
+                  const cid = String(selectedChat.id);
+                  setUnreadByChatId((prev) => {
+                    const next = { ...prev };
+                    delete next[cid];
+                    return next;
+                  });
+                }
+              }}
             />
 
             <div className="border-t border-gray-200 p-4 bg-gray-50">
@@ -716,7 +861,8 @@ export default function ChatPage() {
                             setSelectedChat((prev) =>
                               prev ? { ...prev, participants: (prev.participants ?? []).filter((p) => p.id !== user.id) } : prev
                             );
-                            setShowParticipantsModal(false);
+                            await loadChats();
+                              setShowParticipantsModal(false);
                           }}
                           className="p-3 bg-transparent text-gray-400 rounded-lg hover:bg-gray-200 text-lg font-medium cursor-pointer"
                         >
@@ -726,12 +872,15 @@ export default function ChatPage() {
 
                       {user.id === currentUserId && (
                         <button
-                          onClick={() => {
+                          onClick={async () => {
                             if (!selectedChat) return;
-                            ChatService.removeGroupParticipant(selectedChat.id, user.id);
-                            setSelectedChat((prev) =>
-                              prev ? { ...prev, participants: (prev.participants ?? []).filter((p) => p.id !== user.id) } : prev
-                            );
+
+                            await ChatService.removeGroupParticipant(selectedChat.id, user.id);
+
+                            // refresh sidebar and close the chat (you left it)
+                            await loadChats();
+                            setSelectedChat(null);
+                            setMessages([]);
                             setShowParticipantsModal(false);
                           }}
                           className="p-3 bg-transparent text-gray-400 rounded-lg hover:bg-gray-200 text-lg font-medium cursor-pointer"
