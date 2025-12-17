@@ -147,6 +147,20 @@ export default function ChatPage() {
     try {
       const data = await ChatService.getAllChats();
       setChats(data);
+
+      setUnreadByChatId((prev) => {
+        const next: Record<string, number> = { ...prev };
+
+        for (const c of data) {
+          const cid = String(c.id);
+          const count = Number(c.unread_count ?? 0);
+
+          if (count > 0) next[cid] = count;
+          else delete next[cid];
+        }
+
+        return next;
+      });
     } catch (e) {
       console.error('Failed to load chats:', e);
     } finally {

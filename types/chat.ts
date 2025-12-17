@@ -41,6 +41,7 @@ export interface Chat {
   last_message?: string;
   created_at: string;
   updated_at: string;
+  unread_count?: number;
 }
 
 export type Conversation = Chat;
