@@ -535,7 +535,8 @@ export default function ChatPage() {
           <div className="flex justify-between gap-2">
             <h1 className="text-2xl font-bold text-gray-800 mb-3">Geets</h1>
             <button
-              onClick={() => {
+              type="button"
+              onClick={async () => {
                 AuthService.logout();
                 wsDisconnect();
                 router.replace('/login');
